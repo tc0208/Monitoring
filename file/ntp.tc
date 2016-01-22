@@ -1,0 +1,8 @@
+#!/bin/bash
+
+CURL=`whereis curl|awk '{print $2}'`
+PROXY_IP="10.57.35.31"
+PROXY_PORT="8080"
+
+date_ntp=$( $CURL -sD - google.com -x http://$PROXY_IP:$PROXY_PORT/|grep '^Date:'|cut -d ' ' -f3-6)
+[ -n "$date_ntp" ] && date -s "${date_ntp}Z"

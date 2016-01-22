@@ -1,0 +1,1152 @@
+#!/usr/bin/perl -w
+# $Id$
+# $URL$
+
+use Getopt::Long;
+use Math::BigInt;
+
+my $list;
+my $print;
+GetOptions("list" => \$list,
+	   "print" => \$print);
+
+# if we don't have ysar__gather_freq defined then the script
+# is not running within yinst environment and such does not
+# have access to ysar settings. So before running anything
+# we'll load our own settings by calling yinst env ysar
+if (!defined($ENV{"ysar__gather_freq"})) {
+    inherit_yinst_env();
+}
+
+$ENV{PATH} = "/usr/bin:/usr/sbin:/bin:/sbin";
+my $DATFILE = "/home/fih/logs/ysar/ysar.dat";
+#my $DATFILE = "/home/y/logs/ysar/ysar.dat";
+my %stats;
+
+my $clk_tck = `/usr/bin/getconf CLK_TCK`;
+chomp($clk_tck);
+
+loadproc("stat",1);
+my($user,$nice,$sys,$idle,$iowait,$irq,$softirq);
+if (@{$proc{"stat.cpu"}} > 4) {
+    ($user,$nice,$sys,$idle,$iowait,$irq,$softirq) = @{$proc{"stat.cpu"}};
+} else {
+    ($user,$nice,$sys,$idle) = @{$proc{"stat.cpu"}};
+    $iowait = $irq = $softirq = 0;
+}
+addstat("cput","$user,$nice,".($sys+$softirq).",$irq,$idle,$iowait");
+
+loadproc("loadavg",0);
+my($l1,$l2,$l3) = @{$proc{"loadavg"}};
+addstat("load","$l1,$l2,$l3");
+
+loadproc("meminfo",1);
+addstat("mem",${$proc{"meminfo.MemTotal"}}[0] / 4);
+addstat("mem",${$proc{"meminfo.Active"}}[0] / 4);
+addstat("mem",${$proc{"meminfo.MemFree"}}[0] / 4);
+if ($proc{"meminfo.Slab"}) {
+    addstat("mem",${$proc{"meminfo.Slab"}}[0] / 4);
+} else {
+    addstat("mem",0);
+}
+if ($proc{"meminfo.Inactive"}) {
+    addstat("mem",${$proc{"meminfo.Inactive"}}[0] / 4);
+    addstat("mem",0);
+} else {
+    addstat("mem",${$proc{"meminfo.Inact_dirty"}}[0] / 4);
+    my $clean = ${$proc{"meminfo.Inact_clean"}}[0];
+    if (${$proc{"meminfo.Inact_laundry"}}[0]) {
+	$clean += ${$proc{"meminfo.Inact_laundry"}}[0];
+    }
+    addstat("mem",$clean / 4);
+}
+addstat("memx",${$proc{"meminfo.Buffers"}}[0]);
+addstat("memx",${$proc{"meminfo.Cached"}}[0]);
+addstat("memx",${$proc{"meminfo.SwapTotal"}}[0]);
+addstat("memx",${$proc{"meminfo.SwapFree"}}[0]);
+if ($proc{"meminfo.HugePages_Total"}) {
+    addstat("memx",${$proc{"meminfo.HugePages_Total"}}[0]);
+}
+if ($proc{"meminfo.HugePages_Free"}) {
+    addstat("memx",${$proc{"meminfo.HugePages_Free"}}[0]);
+}
+if ($proc{"meminfo.HugePages_Rsvd"}) {
+    addstat("memx",${$proc{"meminfo.HugePages_Rsvd"}}[0]);
+}
+if ($proc{"meminfo.HugePages_Surp"}) {
+    addstat("memx",${$proc{"meminfo.HugePages_Surp"}}[0]);
+}
+if ($proc{"meminfo.Hugepagesize"}) {
+    addstat("memx",${$proc{"meminfo.Hugepagesize"}}[0]);
+}
+
+addstat("sys",0); # syscall
+my($intr,$rest) = @{$proc{"stat.intr"}};
+addstat("sys",$intr);
+addstat("sys",${$proc{"stat.ctxt"}}[0]);
+addstat("sys",0); # trap
+addstat("sys",0); # soft
+
+loadproc("vmstat",1);
+if (${$proc{"vmstat.pswpout"}}[0]) {
+    addstat("swap",${$proc{"vmstat.pswpout"}}[0]);
+    addstat("swap",${$proc{"vmstat.pgpgout"}}[0]);
+} else {
+    addstat("swap",0);
+    addstat("swap",0);
+}
+if (${$proc{"vmstat.pswpin"}}[0]) {
+    addstat("swap",${$proc{"vmstat.pswpin"}}[0]);
+    addstat("swap",${$proc{"vmstat.pgpgin"}}[0]);
+} else {
+    addstat("swap",0);
+    addstat("swap",0);
+}
+
+addstat("fork",${$proc{"stat.processes"}}[0]);
+addstat("fork",0);
+
+loadproc("net/dev",1);
+
+for (keys %proc) {
+    if (/^net\/dev.eth(\d+)$/) {
+	my $eth = $1;
+	my $n = $proc{"net/dev.eth$eth"};
+	if ($n && ${$n}[0] > 0) {
+	    addifstat("eth$eth",$n);
+	}
+    }
+}
+addifstat("lo",$proc{"net/dev.lo"});
+
+loadproc("net/snmp",1);
+my $ip = $proc{"net/snmp.Ip"};
+my $udp = $proc{"net/snmp.Udp"};
+my $tcp = $proc{"net/snmp.Tcp"};
+
+addstat("ip",join(',',
+		  $$ip[2],$$ip[9],
+		  $$udp[0],$$udp[3],
+		  $$tcp[9],$$tcp[10],
+		  0,0,$$tcp[11],0,
+		  $$udp[2],
+		  0,0,0));
+
+my $tcprecvq = 0;
+my $tcpsendq = 0;
+my $tcpest = 0;
+my $tcptimewait = 0;
+my $tcpfinwait1 = 0;
+my $tcpfinwait2 = 0;
+my $tcplistenq = 0;
+my $tcplistenincq = 0;
+
+my $log_tcp_opt = ysaropt('ysar__log_tcp_connstate',1);
+if ($log_tcp_opt == 1 && open(F,"/proc/net/tcp")) {
+    while (<F>) {
+	if (/^\s*\d+:\s+[0-9A-F]+:[0-9A-F]+\s+[0-9A-F]+:[0-9A-F]+\s+([0-9A-F]+)\s+([0-9A-F]+):([0-9A-F]+)/)
+	{
+	    $tcpsendq += hex($2);
+	    my $tmp_recvq = hex($3);
+	    $tcprecvq += $tmp_recvq;
+	    my $state = hex($1);
+	    if ($state == 1) {
+		$tcpest++;
+		if ($tmp_recvq > 0) {
+		    $tcplistenq++;
+		}
+	    } elsif ($state == 6) {
+		$tcptimewait++;
+	    } elsif ($state == 4) {
+		$tcpfinwait1++;
+	    } elsif ($state == 5) {
+		$tcpfinwait2++;
+	    }
+	}
+    }
+    close(F);
+} elsif ($log_tcp_opt == 2) {
+    @out = `/usr/sbin/ss -s`;
+    for (@out) {
+	if (/^TCP:.*estab (\d+).*timewait (\d+)\/.*/) {
+	    $tcpest = $1;
+	    $tcptimewait = $2;
+	    last;
+	}
+    }
+}
+
+loadproc1("net/snmp","Tcp");
+loadproc1("net/netstat","TcpExt");
+
+my $tcplistenover = $proc{"ListenOverflows"};
+
+my $tcpnconnest = $proc{"ActiveOpens"} + $proc{"PassiveOpens"};
+my $tcpnconndrop = 0;
+my $tcpembdrop = $proc{"TCPAbortOnSyn"};
+if (!defined($tcpembdrop)) {
+    $tcpembdrop = 0;
+}
+my $tcprexmitdrop = $proc{"TCPAbortOnTimeout"};
+if (!defined($tcprexmitdrop)) {
+    $tcprexmitdrop = 0;
+}
+my $tcppersistdrop = 0;
+my $tcpkadrop = 0;
+
+addstat("tcp",join(',',
+		   $tcprecvq,$tcpsendq,
+		   $tcpnconnest,$tcpnconndrop,
+		   $tcpest,$tcptimewait,$tcpfinwait1,$tcpfinwait2,
+		   $tcplistenq,$tcplistenincq,$tcplistenover,
+		   $tcpembdrop,$tcprexmitdrop,$tcppersistdrop,$tcpkadrop));
+
+@out = `/bin/ps ax -o ucomm,stat,wchan`;
+my $disk = 0;
+my $pidle = 0;
+my $sleep = 0;
+my $run = 0;
+for (@out) {
+    my($ucomm,$stat,$wchan) = split /\s+/;
+    $stat = substr($stat,0,1);
+    if ($stat eq "D") {
+	$disk++;
+    } elsif ($stat eq "I") {
+	$pidle++;
+    } elsif ($stat eq "S") {
+	$sleep++;
+    } elsif ($stat eq "R") {
+	$run++;
+    }
+}
+addstat("ps",join(",",$run,$sleep,$pidle,$disk));
+
+if (-r "/proc/diskstats") {
+    loadproc("diskstats",3);
+} else {
+    loadproc("partitions",4);
+}
+adddiskstat("hd");
+adddiskstat("sd");
+adddiskstat("vd");
+adddiskstat("cciss/");
+adddiskstat("fio");
+
+if (-x "/home/y/bin/mod_ysar_stat") {
+    my %mod_ysar_stats;
+    my @ysar_inst_names;
+    my @yapache_stats =
+	("requests",
+	 "total_response_time",
+	 "total_bytes_in",
+	 "total_bytes_out",
+	 "total_active_children",
+	 "total_idle_children",
+	 "total_child_starts",
+	 "max_active_children",
+	 "max_active_requests",
+	 "total_max_active_runnable",
+	 "total_max_active_disk_wait",
+	 "total_max_active_page_wait");
+    my @yapache_inst_stats =
+	("requests",
+	 "total_response_time",
+	 "total_bytes_in",
+	 "total_bytes_out",
+	 "total_max_active_page_wait");
+
+    @ysar_inst_names = `/home/y/bin/mod_ysar_stat -q`;
+    if ($? == 0) {
+	
+	# first retrieve the default ysar instance values
+
+	@out = `/home/y/bin/mod_ysar_stat -r`;
+	if ($? == 0) {
+	    for (@out) {
+		chomp;
+		my($key,$val) = split(/=/);
+		if (grep {$_ eq $key} @yapache_stats) {
+		    $mod_ysar_stats{$key} = $val;
+		}
+	    }
+	}
+
+	# then retrieve the specified ysar instances
+
+	for (@ysar_inst_names) {
+	    chomp;
+	    my $ysar_name = $_;
+	    my %mod_ysar_inst_stats;
+	    @out = `/home/y/bin/mod_ysar_stat -r -n $ysar_name`;
+	    if ($? == 0) {
+		for (@out) {
+		    chomp;
+		    my($key,$val) = split(/=/);
+
+		    # for each instance we're going to save
+		    # all of our specified stats
+
+		    if (grep {$_ eq $key} @yapache_stats) {
+			$mod_ysar_inst_stats{$key} = $val;
+		    }
+
+		    # however we update the global stats
+		    # with only request stats since the 
+		    # stats for the max/total children counts
+		    # are already counted for
+		    
+		    if (grep {$_ eq $key} @yapache_inst_stats) {
+			$mod_ysar_stats{$key} += $val;
+		    }
+		}
+
+		# save the ysar specific instance counters
+
+		addstat("yap-$ysar_name",join(",",
+			map($mod_ysar_inst_stats{$_}?$mod_ysar_inst_stats{$_}:0,
+			@yapache_stats)));
+	    }
+	}
+
+	# save the default ysar instance counters
+
+	addstat("yap",join(",",map($mod_ysar_stats{$_}?$mod_ysar_stats{$_}:0,
+				   @yapache_stats)));
+
+    } else {
+	@out = `/home/y/bin/mod_ysar_stat -r`;
+	if ($? == 0) {
+	    for (@out) {
+		chomp;
+		my($key,$val) = split(/=/);
+		$mod_ysar_stats{$key} = $val;
+	    }
+
+	    addstat("yap",join(",",map($mod_ysar_stats{$_}?$mod_ysar_stats{$_}:0,
+				       @yapache_stats)));
+	}
+    }
+}
+
+my $log_tmpfs = ysaropt('ysar__log_tmpfs',0);
+
+@out = `/bin/df -x nfs -x none -T`;
+if ($? == 0) {
+    shift(@out);
+    my $fs = '';
+    my %df;
+    for (@out) {
+	my($dev,$type,$total,$used,$avail,$cap,$mount) = split(/\s+/,$fs.$_);
+	if (defined($mount)) {
+	    $df{$mount} = [$used+$avail,$used];
+	    $fs = '';
+	} else {
+	    $fs = $dev." ";
+	}
+    }
+    @out = `/bin/df -x nfs -T -i`;
+    if ($? == 0) {
+	shift(@out);
+	$fs = '';
+	for (@out) {
+	    my($dev,$type,$total,$used,$avail,$cap,$mount) = split(/\s+/,$fs.$_);
+	    if (defined($mount)) {
+		if ($type eq "ext2" || $type eq "ext3" || $type eq "ext4"
+		    || $type eq "xfs" || $type eq "acfs"
+		    || ($type eq "tmpfs" && $log_tmpfs))
+		{
+		    my $df = $df{$mount};
+		    addstat("df".$mount,
+			    join(",",$$df[0],$$df[1],$used+$avail,$used));
+		}
+		$fs = '';
+	    } else {
+		$fs = $dev." ";
+	    }
+	}
+    }
+
+
+}
+
+#rh: adding ynodejs metrics
+my $ysar_gather_script;
+foreach my $script (qw(/home/y/share/node/mod_a_ysar/ysar_gather.js
+                       /home/y/share/node/mod_a_ysar/lib/ysar_gather.js)) {
+    if (-e $script) { $ysar_gather_script = $script; last; }
+}
+if (defined $ysar_gather_script) {
+    @nodeout = `/home/y/bin/node --file_accessdir=/ $ysar_gather_script`;
+    if ($? == 0 && @nodeout > 0) {
+        addstat("ynodejs",$nodeout[0]);
+    }
+}
+
+if (-x "/home/y/sbin/ysar_mysql_gather") {
+    @out = `/home/y/sbin/ysar_mysql_gather`;
+    if ($? == 0 && @out > 0) {
+	addstat("mysql",$out[0]);
+    }
+}
+
+if (-x "/home/y/sbin/ysar_yts_gather") {
+    @out = `/home/y/sbin/ysar_yts_gather`;
+    if ($? == 0 && @out > 0) {
+	addstat("yts",$out[0]);
+    }
+}
+
+if (ysaropt('ysar__log_nfs',0)) {
+    if (open(F,"/proc/self/mountstats")) {
+
+	my $nfs_mount = '';
+	my @read_stats = (0,0,0,0,0,0,0,0);
+	my @gattr_stats = (0,0,0,0,0,0,0,0);
+	my @lookup_stats = (0,0,0,0,0,0,0,0);
+	my @access_stats = (0,0,0,0,0,0,0,0);
+	my @rdlink_stats = (0,0,0,0,0,0,0,0);
+	my @rddir_stats = (0,0,0,0,0,0,0,0);
+	my @rddirplus_stats = (0,0,0,0,0,0,0,0);
+	my @fsstat_stats = (0,0,0,0,0,0,0,0);
+	my @fsinfo_stats = (0,0,0,0,0,0,0,0);
+	my @pconf_stats = (0,0,0,0,0,0,0,0);
+	my @write_stats = (0,0,0,0,0,0,0,0);
+	my @sattr_stats = (0,0,0,0,0,0,0,0);
+	my @create_stats = (0,0,0,0,0,0,0,0);
+	my @mkdir_stats = (0,0,0,0,0,0,0,0);
+	my @symlink_stats = (0,0,0,0,0,0,0,0);
+	my @mknode_stats = (0,0,0,0,0,0,0,0);
+	my @remove_stats = (0,0,0,0,0,0,0,0);
+	my @rmdir_stats = (0,0,0,0,0,0,0,0);
+	my @rename_stats = (0,0,0,0,0,0,0,0);
+	my @link_stats = (0,0,0,0,0,0,0,0);
+
+	while (<F>) {
+	    chomp;
+	    # when we see a line with device line then we need
+	    # to save the current device
+	    if (/^device .*/) {
+		
+		if ($nfs_mount ne '') {
+                   add_nfs_stats($nfs_mount,\@read_stats,\@gattr_stats,
+				 \@lookup_stats,\@access_stats,\@rdlink_stats,
+				 \@rddir_stats,\@rddirplus_stats,
+				 \@fsstat_stats,\@fsinfo_stats,\@pconf_stats,
+				 \@write_stats,\@sattr_stats,
+				 \@create_stats,\@mkdir_stats,\@symlink_stats,
+				 \@mknode_stats,\@remove_stats,\@rmdir_stats,
+				 \@rename_stats,\@link_stats);
+		}
+		
+		$nfs_mount = '';
+		@read_stats = (0,0,0,0,0,0,0,0);
+		@gattr_stats = (0,0,0,0,0,0,0,0);
+		@lookup_stats = (0,0,0,0,0,0,0,0);
+		@access_stats = (0,0,0,0,0,0,0,0);
+		@rdlink_stats = (0,0,0,0,0,0,0,0);
+		@rddir_stats = (0,0,0,0,0,0,0,0);
+		@rddirplus_stats = (0,0,0,0,0,0,0,0);
+		@fsstat_stats = (0,0,0,0,0,0,0,0);
+		@fsinfo_stats = (0,0,0,0,0,0,0,0);
+		@pconf_stats = (0,0,0,0,0,0,0,0);
+		@write_stats = (0,0,0,0,0,0,0,0);
+		@sattr_stats = (0,0,0,0,0,0,0,0);
+		@create_stats = (0,0,0,0,0,0,0,0);
+		@mkdir_stats = (0,0,0,0,0,0,0,0);
+		@symlink_stats = (0,0,0,0,0,0,0,0);
+		@mknode_stats = (0,0,0,0,0,0,0,0);
+		@remove_stats = (0,0,0,0,0,0,0,0);
+		@rmdir_stats = (0,0,0,0,0,0,0,0);
+		@rename_stats = (0,0,0,0,0,0,0,0);
+		@link_stats = (0,0,0,0,0,0,0,0);
+		
+		if (/^device .* mounted on (.*) with fstype nfs.*/) {
+		    $nfs_mount = $1;
+		}
+		
+		next;
+	    }
+	    
+	    # now check to see if we're dealing with a nfs device
+	    # in which case we'll start collecting counters
+
+	    if ($nfs_mount ne '') {
+		if (/\s*READ: (.*)/) {
+		    @read_stats = split(' ',$1);
+		} elsif (/\s*GETATTR: (.*)/) {
+		    @gattr_stats = split(' ',$1);
+		} elsif (/\s*LOOKUP: (.*)/) {
+		    @lookup_stats = split(' ',$1);
+		} elsif (/\s*ACCESS: (.*)/) {
+		    @access_stats = split(' ',$1);
+		} elsif (/\s*READLINK: (.*)/) {
+		    @rdlink_stats = split(' ',$1);
+		} elsif (/\s*READDIR: (.*)/) {
+		    @rddir_stats = split(' ',$1);
+		} elsif (/\s*READDIRPLUS: (.*)/) {
+		    @rddirplus_stats = split(' ',$1);
+		} elsif (/\s*FSSTAT: (.*)/) {
+		    @fsstat_stats = split(' ',$1);
+		} elsif (/\s*FSINFO: (.*)/) {
+		    @fsinfo_stats = split(' ',$1);
+		} elsif (/\s*PATHCONF: (.*)/) {
+		    @pconf_stats = split(' ',$1);
+		} elsif (/\s*WRITE: (.*)/) {
+		    @write_stats = split(' ',$1);
+		} elsif (/\s*SETATTR: (.*)/) {
+		    @sattr_stats = split(' ',$1);
+		} elsif (/\s*CREATE: (.*)/) {
+		    @create_stats = split(' ',$1);
+		} elsif (/\s*MKDIR: (.*)/) {
+		    @mkdir_stats = split(' ',$1);
+		} elsif (/\s*SYMLINK: (.*)/) {
+		    @symlink_stats = split(' ',$1);
+		} elsif (/\s*MKNOD: (.*)/) {
+		    @mknode_stats = split(' ',$1);
+		} elsif (/\s*REMOVE: (.*)/) {
+		    @remove_stats = split(' ',$1);
+		} elsif (/\s*RMDIR: (.*)/) {
+		    @rmdir_stats = split(' ',$1);
+		} elsif (/\s*RENAME: (.*)/) {
+		    @rename_stats = split(' ',$1);
+		} elsif (/\s*LINK: (.*)/) {
+		    @link_stats = split(' ',$1);
+		}
+	    }
+	}
+
+	close(F);
+
+	if ($nfs_mount ne '') {
+	    add_nfs_stats($nfs_mount,\@read_stats,\@gattr_stats,
+			  \@lookup_stats,\@access_stats,\@rdlink_stats,
+			  \@rddir_stats,\@rddirplus_stats,
+			  \@fsstat_stats,\@fsinfo_stats,\@pconf_stats,
+			  \@write_stats,\@sattr_stats,
+			  \@create_stats,\@mkdir_stats,\@symlink_stats,
+			  \@mknode_stats,\@remove_stats,\@rmdir_stats,
+			  \@rename_stats,\@link_stats);
+	}
+    }
+}
+
+if (-x "/home/y/sbin/ysar_ysquid_gather") {
+    @out = `/home/y/sbin/ysar_ysquid_gather -p 4080`;
+    if ($? == 0 && @out > 0) {
+	addstat("ysquid",$out[0]);
+    }
+}
+
+if (ysaropt('ysar__log_shmproxy',0)) {
+
+    my $ypg = "/home/y/sbin/ysar_shmproxy_gather";
+
+    my $ypg_mutext = "/home/y/tmp/ysar_shmproxy_gather_mutex" ; 
+
+    # fix for YROOT ness. 
+    if (-x  $ypg  and -f "/home/y/bin/shmproxy" ) {
+	use  IO::Socket;
+	use Fcntl ':flock'; # import LOCK_* constants
+
+	my $debug = 0;
+	my %molf; 
+
+	sub mutex_on_lockfile {
+	    my ($mode, $filename) = @_;
+
+	    if ($mode eq 'up') {     # take it.
+		# we could be waiting a very , very long time.
+		# we can only lock open file handles.
+
+		if (open $molf{$filename} , ">$filename") {
+		    $debug and print "requesting lock ($$) ($filename)\n";
+		    flock($molf{$filename} , LOCK_EX);
+		    $debug and print "  got me a lock ($$) ($filename)\n";
+		} else {
+		    die("Can't open ($!) ($filename)...quiting");
+		}
+	    } else {
+
+		if (defined $molf{$filename}) {
+		    $debug and print "before dropping lock ($$) ($filename)\n";
+		    flock($molf{$filename} , LOCK_UN);
+		    close $molf{$filename};
+		    delete $molf{$filename};
+		    $debug and print "after dropping lock  ($$) ($filename)\n";
+		} else {
+		    $debug and print "no locks on this file\n";
+		}
+	    }
+	}
+
+	sub is_mutexed_on_lockfile {
+	    my ($filename) = @_; 
+	    my $ret =0;
+	    
+	    $debug and print "testing mutex on ($filename)\n";
+	    my $testf; 	
+	    if (open $testf , ">$filename") {
+		my $fr = flock($testf, LOCK_EX | LOCK_NB); 	
+		if ($fr) { 
+		    $ret = 0; # it wasn't locked.. now it is.. but ... meh'
+		    flock($testf, LOCK_UN);
+		    close $testf;
+		} else {
+		    $ret = 1; # it is / was locked, can't touch it.
+		}
+	    } else {
+		$debug and print "can't open file, thus file can't be locked\n";
+	    }
+	    
+	    $debug and print "  mutex result is ($ret)\n";
+	    $ret;
+	}
+
+
+	my $islocked = is_mutexed_on_lockfile($ypg_mutext); 
+
+	if ($islocked) {
+	    $debug and print "The mutex is locked, we don't want to do anything now\n";
+	} else {
+	    $debug and print "The mutex is free, so we can probably take it\n";  
+	    mutex_on_lockfile('up', $ypg_mutext);
+
+	    my @ports;
+	    
+	    # we can populate ports in many ways.
+	    # fix, there is a new shmproxy command for doing this....
+	    # but it will only work on newest shmproxy
+	    
+	    my ($now,$begin,$end,$dt);
+	    $now = $begin = time();
+	    $debug and print "begin $begin\n";
+	    my $lsof;
+
+	    my $variablename = "ysar__proxio_ysar_gatherports";
+	    my $yinstbuf = $ENV{$variablename};
+
+	    if ($debug) {
+		$end = $now = time();
+		$dt = $end - $begin ;
+		print "   dt time of ($dt)\n";
+	    }
+
+	    if (defined($yinstbuf)) {
+		$debug and print STDERR "yinstbuf ($yinstbuf)\n";
+		if ($yinstbuf=~ /(\d+(,\d+)*)/ms) {
+		    push @ports, (split /,/ , $1 );
+		} else {
+		    $debug and print "for some reason ($yinstbuf) did not match\n\n";
+		}
+	    } else {
+		$debug and print "no value configured for proxyio ysar gatherports setting\n\n";
+	    }
+
+	    if ($debug) {
+		$end = $now = time();
+		$dt = $end - $begin ;
+		print "  after yinst  dt time of ($dt)\n";
+	    }
+
+	    if (not @ports and -f "/home/y/bin/proxyports") { 
+		$debug and print "id : " . `id` ; 
+		map { 
+		    my $line = $_; 
+		    if ($line =~ /\A\s*(\d+)\s+(\d+)\s*\Z/) {
+			push @ports, $2; 
+		    } else {
+			$debug and print "unable to match cmdport out of proxyports output ($line)\n";
+		    }
+		} split /\n/ , `/home/y/bin/proxyports`; # sudo?
+	    } 
+
+	    if (not @ports) {  
+
+		# see 3413186 - RFE :  this was in place before the new 
+		# verisons of shmproxy had proxyport... we'll keep it...for completeness
+
+		$lsof = -f '/usr/local/bin/lsof' ? '/usr/local/bin/lsof' : ( -f '/usr/sbin/lsof' ? '/usr/sbin/lsof' : ( -f '/home/y/bin/lsof' ? '/home/y/bin/lsof' : 'lsof'));
+
+		$debug and print "lsof ($lsof)\n";
+		my @canidates;
+
+		# do the greps internal to perl... this is going to be running on a lot of hosts...
+		# perf matters some.
+
+		my @canidate_shmp_pids;
+
+		map {
+		    my $line =$_;
+		    if ($line =~ /\A\S+\s+(\d+)\s+.*shmproxy /) {
+			push @canidate_shmp_pids , $1;
+		    }
+
+		} `ps -auxwww 2> /dev/null`;
+
+		if (@canidate_shmp_pids) {
+		    
+		    my $lsof_cmdline = "$lsof -n -M -p " . join "," , @canidate_shmp_pids ;
+		    map {
+			my $line =$_;
+			if ($line =~ /:(\S+)\s+\(LISTEN\)/) {
+			    my $can =$1;
+			    if ($can =~ /\A[0-9]+\Z/) {
+
+			    } else {
+				my (@things) = getservbyname($can,'tcp');
+				if (defined $things[2]) {
+				    $can = $things[2];
+				}
+			    }
+
+			    push @canidates , $can;
+			}
+		    } `$lsof_cmdline`;
+
+		    my $can;
+		    $debug and print "canidates (", (join " " , @canidates)  , ")\n\n";
+
+		    # eventually maybe we'll remove data ports from teh list when we find them in the cmdport output
+
+		    if ($debug) {
+			$end = $now = time();
+			$dt = $end - $begin ;
+			print "  before canidates  dt time of ($dt)\n";
+		    }
+
+		    while (defined ($can = shift @canidates)) {
+			my $buf;
+			$buf = shmp_cmd("localhost",$can , "ruok");
+			$debug and print "buf for can ($can) buf ($buf)\n";
+
+			if (defined $buf and $buf =~ /imok/) {
+			    $debug and print "found a cmdport ($can)\n";
+			    push @ports, $can;
+			} else {
+			    $debug and print "found a not_cmdport ($can)\n";
+			}
+		    }
+
+		    if ($debug) {
+			$end = $now = time();
+			$dt = $end - $begin ;
+			print "  after canidates  dt time of ($dt)\n";
+		    }
+		}
+	    }
+
+	    if (not @ports) {  # we should have already found it... # I guess we'll use defaults.
+		push @ports , 3459 ;  #  UDB shmproxy cmdport
+	    }
+
+	    @ports = sort @ports;  # a little stability to decrease metric variation
+
+	    map {
+		my $port = $_;
+		
+		$debug and print"   working on prot ($port)\n";
+		
+		@out = `$ypg $port`;  # for now hardcode, for later paramiterize.
+		# see 3413186 - RFE : please give us a command line method of 
+		# getting a list of all command ports on the current host
+		
+		$debug and print "out (", (join "\n" , @out ) , ")\n";
+		
+		if ($? == 0 and @out > 0) {
+		    my $line;
+		    $line = shift @out;
+		    if ($line =~ /\A(shmproxy\.$port)=(\S+)\Z/) {
+			addstat($1,$2);
+		    }
+		}
+	    } @ports;
+	    
+	    if ($debug) {
+		$end = $now = time();
+		$dt = $end - $begin ;
+		print "  end end  dt time of ($dt)\n";
+	    }
+
+	    $debug and print "leaving ysar_shmproxy_gather block\n";
+	    mutex_on_lockfile('down', $ypg_mutext);
+	}# mutext
+    }
+
+    sub shmp_cmd {
+	my ($host,$port,$cmd) = @_;
+	my $ret = '';
+
+	# barrowed from pgall.
+	my $timeout = 2;
+
+	my $sock = IO::Socket::INET->new(
+	    Proto => "tcp",
+	    PeerAddr => $host,
+	    PeerPort => $port,
+	    Timeout => $timeout,
+	    Reuse => 1);
+
+	if (! $sock) {
+	    return $ret;
+	}
+
+	# timeouts / alarms were stripped out, we are on loaclhost, things should work okay..
+	# and handling async stuff is the suck.... a select loop?
+	$sock->autoflush(1);
+	my $len;
+	my $buf= '';
+	$len = $sock->sysread($buf, 10);
+	if (not $buf =~ /^% /) {
+	    return $ret;
+	}
+
+	$sock->syswrite($cmd,length("$cmd\n"));
+
+	while (1) {
+	    $buf = '';
+	    $len = $sock->sysread($buf,200);
+	    $ret .= $buf;
+	    if ($ret =~ s/% $//msi) {
+		$sock->close;
+		return $ret;
+	    }
+	}
+    }
+}
+
+my @pc = glob("/home/y/conf/ysar/plugins/*.conf");
+my $plugins = (scalar(@pc)) ? scalar(@pc) : undef;
+
+if ($plugins) {
+   foreach my $p (@pc) { 
+      my ($name,$gather);
+      open(PLUGIN, '<', $p) or die "Can't read plugin configuration $p: $!\n";
+      while (<PLUGIN>) {
+         if ($_ =~ /^NAME=(.*)$/) { $name = $1; } 
+         if ($_ =~ /^GATHER=(.*)$/) { $gather = $1; } 
+      }
+      close(PLUGIN);
+      unless ($name) { die "Unable to find plugin name in $p\n"; }
+      unless ($gather) { die "Unable to find plugin gather script in $p\n"; }
+      if (-x $gather) {
+         @out = `$gather`;
+         if ($? == 0 && @out > 0) { addstat("$name",$out[0]); }
+      }
+   }
+}
+
+ciss(0);
+ciss(1);
+
+if ($list) {
+    for (keys %stats) {
+	print $_."=".$stats{$_}."\n";
+    }
+} else {
+    my $s;
+    $s = time();
+    for (keys %stats) {
+	$s .= "|".$_."=".$stats{$_};
+    }
+    $s .= "\n";
+    if ($print) {
+	print STDOUT $s;
+    } else {
+	if (open(F,">>".$DATFILE)) {
+	    print F $s;
+	    close(F);
+	}
+    }
+}
+
+
+sub addstat {
+    my($key,$val) = @_;
+    if (defined($stats{$key})) {
+	$stats{$key} .= ",".$val;
+    } else {
+	$stats{$key} = $val;
+    }
+}
+
+sub add_nfs_stats {
+    my ($nfs_mount,$read_stats,$gattr_stats,
+	$lookup_stats,$access_stats,$rdlink_stats,
+	$rddir_stats,$rddirplus_stats,
+	$fsstat_stats,$fsinfo_stats,$pconf_stats,
+	$write_stats,$sattr_stats,
+	$create_stats,$mkdir_stats,$symlink_stats,
+	$mknode_stats,$remove_stats,$rmdir_stats,
+	$rename_stats,$link_stats) = @_;
+
+    addstat("nfs.$nfs_mount",
+            join(",",
+		 $$read_stats[0],int(($$read_stats[3]+$$read_stats[4])/1024),
+                 $$read_stats[1]-$$read_stats[0],$$read_stats[6],$$read_stats[7],
+		 $$gattr_stats[0],int(($$gattr_stats[3]+$$gattr_stats[4])/1024),
+                 $$gattr_stats[1]-$$gattr_stats[0],$$gattr_stats[6],$$gattr_stats[7],
+		 $$lookup_stats[0],int(($$lookup_stats[3]+$$lookup_stats[4])/1024),
+                 $$lookup_stats[1]-$$lookup_stats[0],$$lookup_stats[6],$$lookup_stats[7],
+		 $$access_stats[0],int(($$access_stats[3]+$$access_stats[4])/1024),
+                 $$access_stats[1]-$$access_stats[0],$$access_stats[6],$$access_stats[7],
+		 $$rdlink_stats[0],int(($$rdlink_stats[3]+$$rdlink_stats[4])/1024),
+                 $$rdlink_stats[1]-$$rdlink_stats[0],$$rdlink_stats[6],$$rdlink_stats[7],
+		 $$rddir_stats[0],int(($$rddir_stats[3]+$$rddir_stats[4])/1024),
+                 $$rddir_stats[1]-$$rddir_stats[0],$$rddir_stats[6],$$rddir_stats[7],
+		 $$rddirplus_stats[0],int(($$rddirplus_stats[3]+$$rddirplus_stats[4])/1024),
+                 $$rddirplus_stats[1]-$$rddirplus_stats[0],$$rddirplus_stats[6],$$rddirplus_stats[7],
+		 $$fsstat_stats[0],int(($$fsstat_stats[3]+$$fsstat_stats[4])/1024),
+                 $$fsstat_stats[1]-$$fsstat_stats[0],$$fsstat_stats[6],$$fsstat_stats[7],
+		 $$fsinfo_stats[0],int(($$fsinfo_stats[3]+$$fsinfo_stats[4])/1024),
+                 $$fsinfo_stats[1]-$$fsinfo_stats[0],$$fsinfo_stats[6],$$fsinfo_stats[7],
+		 $$pconf_stats[0],int(($$pconf_stats[3]+$$pconf_stats[4])/1024),
+                 $$pconf_stats[1]-$$pconf_stats[0],$$pconf_stats[6],$$pconf_stats[7],
+		 $$write_stats[0],int(($$write_stats[3]+$$write_stats[4])/1024),
+                 $$write_stats[1]-$$write_stats[0],$$write_stats[6],$$write_stats[7],
+		 $$sattr_stats[0],int(($$sattr_stats[3]+$$sattr_stats[4])/1024),
+                 $$sattr_stats[1]-$$sattr_stats[0],$$sattr_stats[6],$$sattr_stats[7],
+		 $$create_stats[0],int(($$create_stats[3]+$$create_stats[4])/1024),
+                 $$create_stats[1]-$$create_stats[0],$$create_stats[6],$$create_stats[7],
+		 $$mkdir_stats[0],int(($$mkdir_stats[3]+$$mkdir_stats[4])/1024),
+                 $$mkdir_stats[1]-$$mkdir_stats[0],$$mkdir_stats[6],$$mkdir_stats[7],
+		 $$symlink_stats[0],int(($$symlink_stats[3]+$$symlink_stats[4])/1024),
+                 $$symlink_stats[1]-$$symlink_stats[0],$$symlink_stats[6],$$symlink_stats[7],
+		 $$mknode_stats[0],int(($$mknode_stats[3]+$$mknode_stats[4])/1024),
+                 $$mknode_stats[1]-$$mknode_stats[0],$$mknode_stats[6],$$mknode_stats[7],
+		 $$remove_stats[0],int(($$remove_stats[3]+$$remove_stats[4])/1024),
+                 $$remove_stats[1]-$$remove_stats[0],$$remove_stats[6],$$remove_stats[7],
+		 $$rmdir_stats[0],int(($$rmdir_stats[3]+$$rmdir_stats[4])/1024),
+                 $$rmdir_stats[1]-$$rmdir_stats[0],$$rmdir_stats[6],$$rmdir_stats[7],
+		 $$rename_stats[0],int(($$rename_stats[3]+$$rename_stats[4])/1024),
+                 $$rename_stats[1]-$$rename_stats[0],$$rename_stats[6],$$rename_stats[7],
+		 $$link_stats[0],int(($$link_stats[3]+$$link_stats[4])/1024),
+                 $$link_stats[1]-$$link_stats[0],$$link_stats[6],$$link_stats[7]));
+}
+
+sub ciss {
+    my($dev) = @_;
+    if (-c "/dev/ciss$dev") {
+	my %pms_stats;
+	my %vol_stats;
+	my %disk_stats;
+	for (my $i = 0; $i < 10; $i++) {
+	    @out = `/home/y/bin/cissutil -c /dev/ciss$dev --show-perfmon=raw`;
+	    if ($?) {
+		last;
+	    }
+	    my $vol;
+	    my $disk;
+	    for (@out) {
+		if (/^\(((da|vol)\d+)\)/) {
+		    $vol = $1;
+		    $disk = '';
+		} elsif (/^\((b\d+t\d+)\)/) {
+		    $disk = $1;
+		} elsif (/^pms.(\S+)\s+:\s+(\d+)/) {
+		    $pms_stats{$1} = $2;
+		} elsif (/^\s+v->(\S+)\s+:\s+(\d+)/) {
+		    $vol_stats{$vol}->{$1} = $2;
+		} elsif (/^\s+p->(\S+)\s+:\s+(\d+)/) {
+		    $disk_stats{$disk}->{$1} = $2;
+		}
+	    }
+	    last if $pms_stats{"Command_list_count"} > 0;
+	    sleep(1);
+	}
+    
+	my @pms_stats =
+	    ("Percent_busy",
+	     "Command_list_count",
+	     "Avg_command_list_latency",
+	     "Percent_active",
+	     "Logical_request_count");
+	my @vol_stats =
+	    ("Logical_writes",
+	     "Logical_reads",
+	     "Avg_queue_depth",
+	     "Cache_hits",
+	     "Cache_misses",
+	     "Read_ahead_sector_count",
+	     "Sectors_read",
+	     "Sectors_written",
+	     "Non_seq_reads",
+	     "Non_seq_writes",
+	     "Avg_read_latency",
+	     "Avg_write_latency");
+	my $c = "ciss";
+	if ($dev > 0) {
+	    $c .= $dev;
+	}
+	addstat($c,join(",",map { $pms_stats{$_} ? $pms_stats{$_} : 0 } @pms_stats));
+	for (sort keys %vol_stats) {
+	    my $v = $vol_stats{$_};
+	    addstat("ciss.".$_,join(",",map { $$v{$_}? $$v{$_} : 0 } @vol_stats));
+	}
+    }
+}
+
+
+sub loadproc {
+    my($path,$keyed) = @_;
+    if (open(F,"/proc/$path")) {
+	while (<F>) {
+	    chomp;
+	    my $key = $path;
+	    my $val = $_;
+	    for (my $k = 0; $k < $keyed; $k++) {
+		if ($val =~ /^\s*([^ :]+)[ :]+(.+)$/) {
+		    $val = $2;
+		    if ($k+1 == $keyed) {
+			$key .= ".$1";
+			last;
+		    }
+		}
+	    }
+	    if ($val =~ /^\d/) {
+		my @val = split(/\s+/,$val);
+		$proc{$key} = \@val;
+	    }
+	}
+	close(F);
+    }
+}
+
+
+sub loadproc1 {
+    my($path,$prefix) = @_;
+    if (open(F,"/proc/$path")) {
+	my $n = 0;
+	my(@keys,@vals);
+	while (<F>) {
+	    chomp;
+	    if (index($_,$prefix) == 0) {
+		if ($n == 0) {
+		    @keys = split(/\s+/);
+		    shift(@keys);
+		} elsif ($n == 1) {
+		    @vals = split(/\s+/);
+		    shift(@vals);
+		    last;
+		}
+		$n++;
+	    }
+	}
+	for (my $i = 0; $i < @keys; $i++) {
+	    $proc{$keys[$i]} = $vals[$i];
+	}
+	close(F);
+    }
+}
+
+
+sub addifstat {
+    my($name,$n) = @_;
+    addstat("if.$name",join(",",$$n[1],$$n[0],$$n[9],$$n[8],$$n[2],$$n[10],$$n[13]));
+}
+
+
+sub adddiskstat {
+    my($prefix) = @_;
+    my $BYTES_PER_SECTOR = Math::BigInt->new("512");
+    my $USEC_PER_SEC = Math::BigInt->new("1000000");
+    my $UINT32_MAX = Math::BigInt->new("4294967296");
+
+    my @disks = ();
+    if($prefix =~ /cciss\//) {
+	for (my $i = 0; $i < 100; $i++) {
+	    push @disks, "c0d$i";
+	}
+    } else {
+	for (my $C = ord('a'); $C <= ord('z'); $C++) {
+	    push @disks, chr($C); 
+	}
+    }
+    foreach my $c (@disks) {
+	my $newfmt = 1;
+	my $n = $proc{"diskstats.$prefix$c"};
+	if (!$n) {
+	    $n = $proc{"partitions.$prefix$c"};
+	}
+	if ($n && $$n[0] > 0) {
+            my $device_name = "$prefix$c";
+            $device_name = "$c" if ($prefix =~ /cciss\//);
+	    my $rbytes = Math::BigInt->new($$n[2]);
+	    $rbytes->bmul($BYTES_PER_SECTOR);
+	    my $wbytes = Math::BigInt->new($$n[6]);
+	    $wbytes->bmul($BYTES_PER_SECTOR);
+	    my $iotime = Math::BigInt->new($$n[9]);	    
+	    $iotime->bmul(1000);
+	    my $queue = Math::BigInt->new($$n[10]);
+	    my $n_ios = Math::BigInt->new($$n[0]) + Math::BigInt->new($$n[4]);
+	    my $n_ticks = Math::BigInt->new($$n[3]) + Math::BigInt->new($$n[7]);
+	    my $blkio_ticks = Math::BigInt->new($$n[9]);
+
+	    addstat("dev.$device_name",
+		    sprintf("%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu",
+			    0,$$n[0],
+			    $rbytes->bdiv($UINT32_MAX),
+			    0,$$n[4],
+			    $wbytes->bdiv($UINT32_MAX),
+			    $iotime->bdiv($USEC_PER_SEC),
+		            $queue->bdiv($UINT32_MAX),
+		            $n_ios->bdiv($UINT32_MAX),
+		            $n_ticks->bdiv($UINT32_MAX),
+		            $blkio_ticks->bdiv($UINT32_MAX)));
+	}
+    }
+}
+
+sub ysaropt {
+    my($opt,$default) = @_;
+    my $ret = $default;
+    my $val = $ENV{$opt};
+    
+    if (defined($val)) {
+	$val = lc($val);
+	if ($val eq "on" || $val eq "yes" || $val eq "1") {
+	    $ret = 1;
+	} elsif ($val eq "off" || $val eq "no" || $val eq "0") {
+	    $ret = 0;
+	} else {
+	    $ret = $val + 0;
+	}
+    }
+    $ret;
+}
+
+sub inherit_yinst_env {
+    my $yinst = '/usr/local/bin/yinst';
+    if (-x $yinst) {
+	my @envs = &retrieve_yinst_settings("$yinst env ysar");
+	for my $env (sort @envs) {
+	    if ($env =~ m/ysar__.*/) {
+		if ($env =~ m%^(\w+)=(.*)$%o) {
+		    my ($key, $value) = ($1, $2);
+		    if (not exists $ENV{$key}) {
+			$ENV{$key} = $value;
+		    }
+		}
+	    }
+	}
+    }
+}
+
+# function taken from webctl to retrieve yinst settings
+sub retrieve_yinst_settings {
+    my ($cmd) = @_;
+    my @result;
+    my $pid;
+    $pid = open(SAFE, '-|');
+    die "unable to fork" unless defined $pid;
+    if ($pid) { # parent
+	@result = <SAFE>;
+	close(SAFE);
+    }
+    else { # child
+	open(STDERR, '>&STDOUT') or die "open: $!";
+	exec split(/\s+/, $cmd);
+	exit(1);
+    }
+    chomp @result;
+    return(@result);
+}

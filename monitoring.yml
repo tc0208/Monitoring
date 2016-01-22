@@ -1,0 +1,22 @@
+---
+- hosts: all
+  remote_user: fih
+  sudo: True
+  tasks:
+  - file: path=/home/fih state=directory owner=fih group=fih mode=0755
+  - file: path=/home/fih/bin state=directory owner=fih group=fih mode=0755
+  - file: path=/home/fih/sbin state=directory owner=fih group=fih mode=0755
+  - file: path=/home/fih/logs/ysar state=directory owner=fih group=fih mode=0755 recurse=yes
+
+#  - name: adding ysar/ysar_gather file
+  - copy: src=file/ysar dest=/home/fih/bin/ysar owner=fih group=fih mode=0755
+  - copy: src=file/ysar_gather dest=/home/fih/sbin/ysar_gather owner=fih group=fih mode=0744
+
+# setup cron for ysar_gather
+  - cron: name="ysar" minute="*" hour="*" job="/home/fih/sbin/ysar_gather"
+
+# setup ntp and cron to update time
+  - copy: src=file/ntp.tc dest=/home/fih/sbin/ntp.tc owner=fih group=fih owner=fih group=fih mode=0744
+  - cron: name="ntp" minute="11" hour="*" job="bash /home/fih/sbin/ntp.tc"
+
+
