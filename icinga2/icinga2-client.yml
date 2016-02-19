@@ -1,0 +1,7 @@
+---
+- name: setup icinga2 client
+  hosts: all
+  roles:
+    - icinga2_client
+    - icinga2_common
+    - ysar

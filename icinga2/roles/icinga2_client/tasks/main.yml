@@ -1,0 +1,29 @@
+---
+
+- name: install icinga2 client
+  remote_user: "{{ remote_user }}"
+  sudo: True
+  yum: name={{ item }} state=present
+  with_items:
+    - icinga2-2.4.1-1.el6.x86_64
+    - icinga2-bin-2.4.1-1.el6.x86_64
+    - icinga2-common-2.4.1-1.el6.x86_64
+    - nagios-plugins-2.0.3-3.el6.x86_64
+    - nagios-plugins-procs-2.0.3-3.el6.x86_64
+    - nagios-plugins-ssh-2.0.3-3.el6.x86_64
+    - nagios-plugins-disk-2.0.3-3.el6.x86_64
+    - nagios-plugins-ping-2.0.3-3.el6.x86_64
+    - nagios-plugins-users-2.0.3-3.el6.x86_64
+    - nagios-plugins-load-2.0.3-3.el6.x86_64
+    - nagios-plugins-http-2.0.3-3.el6.x86_64
+    - nagios-plugins-dummy-2.0.3-3.el6.x86_64
+    - nagios-common-3.5.1-1.el6.x86_64
+    - nagios-plugins-swap-2.0.3-3.el6.x86_64
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+- name: deploy check command file
+  copy: >
+    src=check_yum dest={{ nagios_plugin_path }}/check_yum owner=root group=root mode=0755
+  sudo: True
+  notify: restart icinga2
+

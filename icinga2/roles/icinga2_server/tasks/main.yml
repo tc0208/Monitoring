@@ -1,0 +1,33 @@
+---
+
+- name: install icinga2 server
+  remote_user: "{{ remote_user }}"
+  sudo: True
+  apt: name={{ item }} state=present
+  with_items:
+    - icinga2
+    - icinga2-bin
+    - icinga2-common
+    - icinga2-doc
+    - icinga2-ido-mysql
+    - icingaweb2
+    - icingaweb2-module-doc
+    - icingaweb2-module-monitoring
+    - libicinga2
+    - php-icinga
+  when: (ansible_distribution == "Ubuntu" and ansible_distribution_major_version == "14")
+
+- name: deploy check command file
+  copy: >
+    src=check_squid dest={{ nagios_plugin_path }}/check_squid owner=root group=root mode=0755
+  sudo: True
+  notify: restart icinga2
+
+- name: deploy configuration file
+  copy: >
+    src=hosts.conf dest={{ icinga2_conf_path }}/hosts.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
+    src=services.conf dest={{ icinga2_conf_path }}/services.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
+    src=yum.conf dest={{ icinga2_conf_path }}/yum.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
+  sudo: True
+  notify: restart icinga2
+
