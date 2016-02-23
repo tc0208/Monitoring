@@ -1,29 +1,44 @@
 ---
 
+- name: add icinga2 yum repo
+  copy: >
+    src=ICINGA-release.repo dest={{ yum_repo_path }}/ICINGA-release.repo owner=root group=root mode=0644
+    src=epel.repo dest={{ yum_repo_path }}/epel.repo owner=root group=root mode=0644
+  sudo: True
+
 - name: install icinga2 client
   remote_user: "{{ remote_user }}"
   sudo: True
   yum: name={{ item }} state=present
   with_items:
-    - icinga2-2.4.1-1.el6.x86_64
-    - icinga2-bin-2.4.1-1.el6.x86_64
-    - icinga2-common-2.4.1-1.el6.x86_64
-    - nagios-plugins-2.0.3-3.el6.x86_64
-    - nagios-plugins-procs-2.0.3-3.el6.x86_64
-    - nagios-plugins-ssh-2.0.3-3.el6.x86_64
-    - nagios-plugins-disk-2.0.3-3.el6.x86_64
-    - nagios-plugins-ping-2.0.3-3.el6.x86_64
-    - nagios-plugins-users-2.0.3-3.el6.x86_64
-    - nagios-plugins-load-2.0.3-3.el6.x86_64
-    - nagios-plugins-http-2.0.3-3.el6.x86_64
-    - nagios-plugins-dummy-2.0.3-3.el6.x86_64
-    - nagios-common-3.5.1-1.el6.x86_64
-    - nagios-plugins-swap-2.0.3-3.el6.x86_64
+    - icinga2-2.4.1
+    - icinga2-bin-2.4.1
+    - icinga2-common-2.4.1
+    - nagios-plugins-2.0.3
+    - nagios-plugins-procs-2.0.3
+    - nagios-plugins-ssh-2.0.3
+    - nagios-plugins-disk-2.0.3
+    - nagios-plugins-ping-2.0.3
+    - nagios-plugins-users-2.0.3
+    - nagios-plugins-load-2.0.3
+    - nagios-plugins-http-2.0.3
+    - nagios-plugins-dummy-2.0.3
+    - nagios-common-3.5.1
+    - nagios-plugins-swap-2.0.3
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  notify: restart icinga2
 
-- name: deploy check command file
+- name: deploy check_yum command file
   copy: >
     src=check_yum dest={{ nagios_plugin_path }}/check_yum owner=root group=root mode=0755
   sudo: True
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  notify: restart icinga2
+
+- name: deploy yum.conf configuration file
+  copy: >
+    src=yum.conf dest={{ icinga2_conf_path }}/yum.conf owner=root group=root mode=0755
+  sudo: True
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
   notify: restart icinga2
 
