@@ -9,11 +9,11 @@
   notify: restart icinga2
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
 
-- name: deploy graylog-server.conf file (Centos)
+- name: deploy elasticsearch.conf file (Centos)
   sudo: True
   remote_user: "{{ remote_user }}"
   copy: >
-    src=graylog-server.conf dest={{ icinga2_conf_path }}/graylog-server.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
+    src=elasticsearch.conf dest={{ icinga2_conf_path }}/elasticsearch.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
   sudo: True
   notify: restart icinga2
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
