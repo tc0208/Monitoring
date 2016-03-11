@@ -2,7 +2,7 @@
 
 - name: install icinga2 check_procs
   remote_user: "{{ remote_user }}"
-  sudo: True
+  become: yes
   yum: name={{ item }} state=present
   with_items:
     - nagios-plugins-procs-2.0.3
@@ -10,11 +10,10 @@
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
 
 - name: deploy elasticsearch.conf file (Centos)
-  sudo: True
+  become: yes
   remote_user: "{{ remote_user }}"
   copy: >
     src=elasticsearch.conf dest={{ icinga2_conf_path }}/elasticsearch.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
-  sudo: True
   notify: restart icinga2
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
 

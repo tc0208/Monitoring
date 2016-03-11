@@ -2,4 +2,4 @@
 
 - name: restart icinga2
   service: name=icinga2 state=restarted
-  sudo: True
+  become: yes
