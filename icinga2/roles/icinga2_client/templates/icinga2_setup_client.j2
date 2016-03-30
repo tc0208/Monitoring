@@ -1,12 +1,12 @@
 #!/bin/bash
 
 hn=`hostname`
-#master="ubuntu"
 master={{ icinga2_master }}
 port={{ icinga2_port }}
 
 icinga2_pki_path="/etc/icinga2/pki"
-ticket={{ centos }}
+salt={{ salt }}
+ticket=`icinga2 pki ticket --cn $hn --salt $salt`
 
 echo $hn
 echo $icinga2_pki_path

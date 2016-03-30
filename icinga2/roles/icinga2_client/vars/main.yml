@@ -3,6 +3,7 @@ icinga2_user: icinga
 icinga2_group: icinga
 nagios_plugin_path: /usr/lib64/nagios/plugins
 icinga2_conf_path: /etc/icinga2/conf.d
+icinga2_pki_path: /etc/icinga2/pki
 yum_repo_path: /etc/yum.repos.d
 icinga2_master: ubuntu
 icinga2_port: 5665

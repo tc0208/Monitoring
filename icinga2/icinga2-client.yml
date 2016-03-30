@@ -6,6 +6,5 @@
   roles:
     - icinga2_client
     - icinga2_common
-    - ysar
 
 

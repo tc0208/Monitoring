@@ -3,6 +3,10 @@
 - name: add icinga2 yum repo
   copy: >
     src=ICINGA-release.repo dest={{ yum_repo_path }}/ICINGA-release.repo owner=root group=root mode=0644
+  sudo: True
+
+- name: add epel yum repo
+  copy: >
     src=epel.repo dest={{ yum_repo_path }}/epel.repo owner=root group=root mode=0644
   sudo: True
 
@@ -11,9 +15,9 @@
   sudo: True
   yum: name={{ item }} state=present
   with_items:
-    - icinga2-2.4.1
-    - icinga2-bin-2.4.1
-    - icinga2-common-2.4.1
+    - icinga2-2.4.4
+    - icinga2-bin-2.4.4
+    - icinga2-common-2.4.4
     - nagios-plugins-2.0.3
     - nagios-plugins-procs-2.0.3
     - nagios-plugins-ssh-2.0.3
@@ -30,15 +34,20 @@
 
 - name: vault vars debug
   sudo: True
-  debug: msg="my secure variable '{{ centos }}'"
+  debug: msg="my secure variable '{{ salt }}'"
 
 - name: Transfer the script
   sudo: True
   template: src=icinga2_setup_client.j2 dest=/tmp/icinga2_setup_client.sh mode=0740
 
+- name: check if file /tmp/icinga2_setup_client.sh exists
+  stat: path=/tmp/icinga2_setup_client.sh
+  register: file_stat
+
 - name: setup node
   sudo: True
   command: /tmp/icinga2_setup_client.sh
+  when: file_stat.stat.exists == True
 
 - name: deploy check_yum command file
   copy: >
@@ -53,4 +62,9 @@
   sudo: True
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
   notify: restart icinga2
+
+- name: delete file /tmp/icinga2_setup_client.sh
+  become: yes
+  file: path=/tmp/icinga2_setup_client.sh state=absent
+  when: file_stat.stat.exists == True
 
