@@ -17,3 +17,17 @@
   notify: restart icinga2
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
 
+- name: deploy check_jvm file (Centos)
+  become: yes
+  remote_user: "{{ remote_user }}"
+  copy: >
+    src=check_jvm dest={{ icinga2_plugin_path }}/check_jvm owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0755
+  notify: restart icinga2
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+- name: deploy JvmInspector.jar file 
+  become: yes
+  remote_user: "{{ remote_user }}"
+  copy: >
+    src=JvmInspector.jar dest=/usr/local/bin/JvmInspector.jar owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0664
+

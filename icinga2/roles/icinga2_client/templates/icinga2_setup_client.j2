@@ -8,6 +8,8 @@ icinga2_pki_path="/etc/icinga2/pki"
 salt={{ salt }}
 ticket=`icinga2 pki ticket --cn $hn --salt $salt`
 
+[ -d $icinga2_pki_path ] || mkdir -p $icinga2_pki_path
+
 echo $hn
 echo $icinga2_pki_path
 

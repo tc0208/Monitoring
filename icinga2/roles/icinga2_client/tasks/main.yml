@@ -10,14 +10,23 @@
     src=epel.repo dest={{ yum_repo_path }}/epel.repo owner=root group=root mode=0644
   sudo: True
 
+- name: install epel-release-6-8 key
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - epel-release
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+# sudo yum -y  install http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
+
 - name: install icinga2 client
   remote_user: "{{ remote_user }}"
   sudo: True
   yum: name={{ item }} state=present
   with_items:
-    - icinga2-2.4.4
-    - icinga2-bin-2.4.4
-    - icinga2-common-2.4.4
+    - icinga2-2.4.7
+    - icinga2-bin-2.4.7
+    - icinga2-common-2.4.7
     - nagios-plugins-2.0.3
     - nagios-plugins-procs-2.0.3
     - nagios-plugins-ssh-2.0.3

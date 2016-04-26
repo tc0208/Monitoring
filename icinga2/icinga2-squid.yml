@@ -1,0 +1,9 @@
+---
+- name: setup icinga2 client for squid
+  hosts: all
+  roles:
+    - icinga2_common
+    - icinga2_squid
+
+
+
