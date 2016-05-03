@@ -1,7 +1,10 @@
 ---
 - name: setup icinga2 client for squid
   hosts: all
+  vars_files:
+    - roles/icinga2_client/vars/vault.yml
   roles:
+    - icinga2_client
     - icinga2_common
     - icinga2_squid
 

@@ -16,11 +16,29 @@
   sudo: True
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
 
+- name: deploy web-proxy.conf file (Centos)
+  sudo: True
+  remote_user: "{{ remote_user }}"
+  copy: >
+    src=web-proxy.conf dest={{ icinga2_conf_path }}/web-proxy.conf owner={{ icinga2_centos_user }} group={{ icinga2_client_group }} mode=0640
+  sudo: True
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+
 - name: deploy check_squid file (Centos)
   sudo: True
   remote_user: "{{ remote_user }}"
   copy: >
     src=check_squid dest={{ icinga2_plugin_path }}/check_squid owner=root group=root mode=0755
+  sudo: True
+  notify: restart icinga2
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+- name: deploy check_proxy file (Centos)
+  sudo: True
+  remote_user: "{{ remote_user }}"
+  copy: >
+    src=check_proxy dest={{ icinga2_plugin_path }}/check_proxy owner=root group=root mode=0755
   sudo: True
   notify: restart icinga2
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")

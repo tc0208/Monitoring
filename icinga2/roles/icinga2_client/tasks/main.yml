@@ -58,6 +58,14 @@
   command: /tmp/icinga2_setup_client.sh
   when: file_stat.stat.exists == True
 
+- name: install yum-plugin-security
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - yum-plugin-security-1.1.30
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
 - name: deploy check_yum command file
   copy: >
     src=check_yum dest={{ nagios_plugin_path }}/check_yum owner=root group=root mode=0755
