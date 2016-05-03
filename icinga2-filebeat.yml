@@ -1,0 +1,6 @@
+---
+- name: add process check for filebeat
+  hosts: all
+  roles:
+    - icinga2_filebeat
+

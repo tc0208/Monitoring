@@ -1,7 +1,0 @@
----
-- name: setup ysar
-  hosts: all
-  roles:
-    - ysar
-
-

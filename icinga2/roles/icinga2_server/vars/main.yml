@@ -1,5 +1,0 @@
-remote_user: fih
-icinga2_user: nagios
-icinga2_group: nagios
-nagios_plugin_path: /usr/lib/nagios/plugins/
-icinga2_conf_path: /etc/icinga2/conf.d

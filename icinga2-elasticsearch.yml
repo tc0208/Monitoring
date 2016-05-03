@@ -1,0 +1,6 @@
+---
+- name: setup icinga2 check for elasticsearch
+  hosts: all
+  roles:
+    - icinga2_elasticsearch
+

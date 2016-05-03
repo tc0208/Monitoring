@@ -1,0 +1,6 @@
+remote_user: fih
+icinga2_centos_user: icinga
+icinga2_client_group: icinga
+icinga2_ubuntu_user: nagios
+icinga2_server_group: nagios
+icinga2_conf_path: /etc/icinga2/conf.d

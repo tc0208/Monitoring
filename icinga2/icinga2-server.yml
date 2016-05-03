@@ -1,9 +1,0 @@
----
-- name: setup icinga2 server
-  hosts: all
-  roles:
-    - icinga2_server
-    - icinga2_common
-    - ysar
-
-

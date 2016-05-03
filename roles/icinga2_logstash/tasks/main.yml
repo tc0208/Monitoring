@@ -1,0 +1,20 @@
+---
+
+- name: install icinga2 check_kibana
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - nagios-plugins-basic
+  notify: restart icinga2
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+- name: deploy kibana-web.conf file (Centos)
+  become: yes
+  remote_user: "{{ remote_user }}"
+  copy: >
+    src=kibana-web.conf dest={{ icinga2_conf_path }}/kibana-web.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
+  notify: restart icinga2
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+
