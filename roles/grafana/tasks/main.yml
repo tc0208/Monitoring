@@ -1,0 +1,23 @@
+---
+
+- name: add grafana YUM Repository
+  remote_user: "{{ remote_user }}"
+  become: yes
+  copy: >
+    src=grafana.repo dest={{ yum_repo_path }}/grafana.repo owner=root group=root mode=0644
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+- name: install grafana
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - grafana-2.6.0
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  notify: restart grafana
+
+- name: deploy grafana.ini
+  become: yes
+  template: src=grafana.j2 dest={{ grafana_conf }}/grafana.ini mode=0640
+  notify: restart grafana
+
