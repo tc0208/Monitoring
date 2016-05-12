@@ -1,0 +1,7 @@
+---
+- name: setup collectd
+  hosts: all
+  roles:
+    - collectd
+
+

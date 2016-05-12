@@ -1,0 +1,25 @@
+---
+
+- name: install epel-release-6-8 key
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - epel-release
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+# sudo yum -y  install http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
+
+- name: install collectd
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - collectd-4.10.9
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  notify: restart collectd
+
+- name: deploy collectd.conf
+  become: yes
+  template: src=collectd.j2 dest=/etc/collectd.conf mode=0644
+  notify: restart collectd
+
