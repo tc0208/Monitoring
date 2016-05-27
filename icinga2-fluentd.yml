@@ -1,0 +1,6 @@
+---
+- name: setup icinga2 check for fluentd
+  hosts: all
+  roles:
+    - icinga2_fluentd
+
