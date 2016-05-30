@@ -39,11 +39,12 @@
   notify: restart icinga2
 
 - name: deploy configuration file
-  copy: >
-    src=hosts.conf dest={{ icinga2_conf_path }}/hosts.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
-    src=services.conf dest={{ icinga2_conf_path }}/services.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
-    src=yum.conf dest={{ icinga2_conf_path }}/yum.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
-    src=web-proxy.conf dest={{ icinga2_conf_path }}/web-proxy.conf owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
+  copy: src={{ item }} dest={{ icinga2_conf_path }}/{{ item }} owner={{ icinga2_user }} group={{ icinga2_group }} mode=0644
+  with_items:
+    - hosts.conf
+    - services.conf
+    - web-proxy.conf
+    - yum.conf
   become: yes
   notify: restart icinga2
 
