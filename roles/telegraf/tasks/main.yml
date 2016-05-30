@@ -1,0 +1,10 @@
+---
+
+# wget https://dl.influxdata.com/telegraf/releases/telegraf-0.13.1.x86_64.rpm
+# sudo yum localinstall telegraf-0.13.1.x86_64.rpm
+
+- name: deploy telegraf.conf
+  become: yes
+  template: src=telegraf.j2 dest={{ telegraf_conf_path }}/telegraf.conf mode=0644
+  notify: restart telegraf
+

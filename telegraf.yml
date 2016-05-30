@@ -1,0 +1,7 @@
+---
+- name: setup telegraf
+  hosts: all
+  roles:
+    - telegraf
+
+

@@ -1,0 +1,6 @@
+telegraf_conf_path: /etc/telegraf
+
+influxdb_host: 10.57.54.187
+influxdb_port : 8086
+influxdb_db: telegraf
+remote_user: fih
