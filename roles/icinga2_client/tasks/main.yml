@@ -3,12 +3,22 @@
 - name: add icinga2 yum repo
   copy: >
     src=ICINGA-release.repo dest={{ yum_repo_path }}/ICINGA-release.repo owner=root group=root mode=0644
-  sudo: True
+  become: yes
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" or ansible_distribution_major_version == "7")
 
-- name: add epel yum repo
+
+- name: add epel6 yum repo
   copy: >
     src=epel.repo dest={{ yum_repo_path }}/epel.repo owner=root group=root mode=0644
-  sudo: True
+  become: yes
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+
+- name: add epel7 yum repo
+  copy: >
+    src=epel7.repo dest={{ yum_repo_path }}/epel.repo owner=root group=root mode=0644
+  become: yes
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "7")
+
 
 - name: install epel-release-6-8 key
   remote_user: "{{ remote_user }}"
@@ -19,9 +29,9 @@
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
 # sudo yum -y  install http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
 
-- name: install icinga2 client
+- name: install icinga2 client on centos6
   remote_user: "{{ remote_user }}"
-  sudo: True
+  become: yes
   yum: name={{ item }} state=present
   with_items:
     - icinga2-2.4.7
@@ -41,12 +51,33 @@
   when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
   notify: restart icinga2
 
-- name: vault vars debug
-  sudo: True
-  debug: msg="my secure variable '{{ salt }}'"
+- name: install icinga2 client on centos7
+  remote_user: "{{ remote_user }}"
+  become: yes
+  yum: name={{ item }} state=present
+  with_items:
+    - icinga2-2.4.10
+    - icinga2-bin-2.4.10
+    - icinga2-common-2.4.10
+    - nagios-plugins-2.0.3
+    - nagios-plugins-procs-2.0.3
+    - nagios-plugins-ssh-2.0.3
+    - nagios-plugins-disk-2.0.3
+    - nagios-plugins-ping-2.0.3
+    - nagios-plugins-users-2.0.3
+    - nagios-plugins-load-2.0.3
+    - nagios-plugins-http-2.0.3
+    - nagios-plugins-dummy-2.0.3
+    - nagios-common-4.0.8
+    - nagios-plugins-swap-2.0.3
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "7")
+  notify: restart icinga2
+  register: pkgs_stat
+
+#- file: path=/etc/icinga2/pki state=directory owner=icinga group=icinga 
 
 - name: Transfer the script
-  sudo: True
+  become: yes
   template: src=icinga2_setup_client.j2 dest=/tmp/icinga2_setup_client.sh mode=0740
 
 - name: check if file /tmp/icinga2_setup_client.sh exists
@@ -54,7 +85,7 @@
   register: file_stat
 
 - name: setup node
-  sudo: True
+  become: yes
   command: /tmp/icinga2_setup_client.sh
   when: file_stat.stat.exists == True
 
@@ -69,15 +100,15 @@
 - name: deploy check_yum command file
   copy: >
     src=check_yum dest={{ nagios_plugin_path }}/check_yum owner=root group=root mode=0755
-  sudo: True
-  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  become: yes
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" or ansible_distribution_major_version == "7")
   notify: restart icinga2
 
 - name: deploy yum.conf configuration file
   copy: >
     src=yum.conf dest={{ icinga2_conf_path }}/yum.conf owner=root group=root mode=0755
-  sudo: True
-  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  become: yes
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" or ansible_distribution_major_version == "7")
   notify: restart icinga2
 
 - name: delete file /tmp/icinga2_setup_client.sh

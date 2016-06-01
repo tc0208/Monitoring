@@ -1,7 +1,7 @@
 ---
 
 - name: deploy commands.conf file (Ubuntu)
-  sudo: True
+  become: yes
   remote_user: "{{ remote_user }}"
   copy: >
     src=commands.conf dest={{ icinga2_conf_path }}/commands.conf owner={{ icinga2_ubuntu_user }} group={{ icinga2_ubuntu_group }} mode=0644
@@ -9,7 +9,7 @@
   when: (ansible_distribution == "Ubuntu" and ansible_distribution_major_version == "14")
 
 - name: deploy services.conf file (Ubuntu)
-  sudo: True
+  become: yes
   remote_user: "{{ remote_user }}"
   copy: >
     src=services.conf dest={{ icinga2_conf_path }}/services.conf owner={{ icinga2_ubuntu_user }} group={{ icinga2_ubuntu_group }} mode=0644
@@ -18,20 +18,20 @@
 
 
 - name: deploy commands.conf file (Centos)
-  sudo: True
+  become: yes
   remote_user: "{{ remote_user }}"
   copy: >
     src=commands.conf dest={{ icinga2_conf_path }}/commands.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
-  sudo: True
+  become: yes
   notify: restart icinga2
-  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" or ansible_distribution_major_version == "7")
 
 - name: deploy services.conf file (Centos)
-  sudo: True
+  become: yes
   remote_user: "{{ remote_user }}"
   copy: >
     src=services.conf dest={{ icinga2_conf_path }}/services.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
-  sudo: True
+  become: yes
   notify: restart icinga2
-  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6")
+  when: (ansible_distribution == "CentOS" and ansible_distribution_major_version == "6" or ansible_distribution_major_version == "7")
 
