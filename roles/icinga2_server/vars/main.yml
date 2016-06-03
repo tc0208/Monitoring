@@ -3,3 +3,4 @@ icinga2_user: icinga
 icinga2_group: icinga
 nagios_plugin_path: /usr/lib64/nagios/plugins/
 icinga2_conf_path: /etc/icinga2/conf.d
+icinga2_scripts_path: /etc/icinga2/scripts

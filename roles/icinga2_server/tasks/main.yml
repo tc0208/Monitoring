@@ -45,6 +45,15 @@
     - services.conf
     - web-proxy.conf
     - yum.conf
+    - notifications.conf
+    - templates.conf
+  become: yes
+  notify: restart icinga2
+
+- name: deploy scripts file
+  copy: src={{ item }} dest={{ icinga2_scripts_path }}/{{ item }} owner=root group=root mode=0755
+  with_items:
+    - mail-service-notification.sh
   become: yes
   notify: restart icinga2
 
