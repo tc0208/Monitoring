@@ -21,7 +21,7 @@
 
 
 - name: install epel-release-6-8 key
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   become: yes
   yum: name={{ item }} state=present
   with_items:
@@ -30,13 +30,13 @@
 # sudo yum -y  install http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
 
 - name: install icinga2 client on centos6
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   become: yes
   yum: name={{ item }} state=present
   with_items:
-    - icinga2-2.4.7
-    - icinga2-bin-2.4.7
-    - icinga2-common-2.4.7
+    - icinga2
+    - icinga2-bin-2.4.10
+    - icinga2-common-2.4.10
     - nagios-plugins-2.0.3
     - nagios-plugins-procs-2.0.3
     - nagios-plugins-ssh-2.0.3
@@ -74,7 +74,11 @@
   notify: restart icinga2
   register: pkgs_stat
 
-#- file: path=/etc/icinga2/pki state=directory owner=icinga group=icinga 
+- name: change /etc/icinga2/pki owner to icinga
+  become: yes
+  file: path=/etc/icinga2/pki state=directory
+        owner=icinga group=icinga 
+        mode=0755
 
 - name: Transfer the script
   become: yes
@@ -90,7 +94,7 @@
   when: file_stat.stat.exists == True
 
 - name: install yum-plugin-security
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   become: yes
   yum: name={{ item }} state=present
   with_items:

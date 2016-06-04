@@ -2,7 +2,7 @@
 
 - name: deploy commands.conf file (Ubuntu)
   become: yes
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   copy: >
     src=commands.conf dest={{ icinga2_conf_path }}/commands.conf owner={{ icinga2_ubuntu_user }} group={{ icinga2_ubuntu_group }} mode=0644
   notify: restart icinga2
@@ -10,7 +10,7 @@
 
 - name: deploy services.conf file (Ubuntu)
   become: yes
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   copy: >
     src=services.conf dest={{ icinga2_conf_path }}/services.conf owner={{ icinga2_ubuntu_user }} group={{ icinga2_ubuntu_group }} mode=0644
   notify: restart icinga2
@@ -19,7 +19,7 @@
 
 - name: deploy commands.conf file (Centos)
   become: yes
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   copy: >
     src=commands.conf dest={{ icinga2_conf_path }}/commands.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
   become: yes
@@ -28,7 +28,7 @@
 
 - name: deploy services.conf file (Centos)
   become: yes
-  remote_user: "{{ remote_user }}"
+#  remote_user: "{{ remote_user }}"
   copy: >
     src=services.conf dest={{ icinga2_conf_path }}/services.conf owner={{ icinga2_centos_user }} group={{ icinga2_centos_group }} mode=0644
   become: yes
